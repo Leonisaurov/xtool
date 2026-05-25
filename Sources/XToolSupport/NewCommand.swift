@@ -121,12 +121,14 @@ struct NewCommand: AsyncParsableCommand {
             ),
 
             (
-                ".sourcekit-lsp/config.json",
+                ".bsp/xtool.json",
                 """
                 {
-                    "swiftPM": {
-                        "swiftSDK": "arm64-apple-ios"
-                    }
+                    "name": "xtool",
+                    "version": "1.0",
+                    "bspVersion": "2.2.0",
+                    "languages": ["c", "cpp", "objective-c", "objective-cpp", "swift"],
+                    "argv": ["/usr/bin/env", "xtool", "dev", "build-server"]
                 }
                 """
             ),

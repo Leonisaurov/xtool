@@ -1,4 +1,4 @@
-// swift-tools-version:6.0
+// swift-tools-version:6.2
 
 import PackageDescription
 
@@ -18,6 +18,14 @@ let xtoolVersion: String? = {
 let cSettings: [CSetting] = [
     .define("_GNU_SOURCE", .when(platforms: [.linux])),
 ]
+
+let swiftSettings: [SwiftSetting] = {
+    var settings: [SwiftSetting] = []
+    if Context.environment["XTL_CI"] == "1" {
+        settings.append(.treatAllWarnings(as: .error))
+    }
+    return settings
+}()
 
 let package = Package(
     name: "xtool",
@@ -43,6 +51,7 @@ let package = Package(
         .package(url: "https://github.com/xtool-org/xtool-core", .upToNextMinor(from: "1.4.1")),
         .package(url: "https://github.com/xtool-org/SwiftyMobileDevice", .upToNextMinor(from: "1.5.0")),
         .package(url: "https://github.com/xtool-org/zsign", .upToNextMinor(from: "1.7.0")),
+        .package(url: "https://github.com/xtool-org/xadi", .upToNextMinor(from: "0.4.0")),
 
         .package(url: "https://github.com/apple/swift-system", from: "1.4.0"),
         .package(url: "https://github.com/apple/swift-http-types", from: "1.3.1"),
@@ -74,7 +83,6 @@ let package = Package(
         .package(url: "https://github.com/yonaskolb/XcodeGen", from: "2.45.4"),
     ],
     targets: [
-        .systemLibrary(name: "XADI"),
         .target(
             name: "CXKit",
             dependencies: [
@@ -91,7 +99,8 @@ let package = Package(
             dependencies: [
                 .product(name: "OpenAPIRuntime", package: "swift-openapi-runtime"),
             ],
-            exclude: ["openapi-generator-config.yaml", "patch.js"]
+            exclude: ["openapi-generator-config.yaml", "patch.js"],
+            swiftSettings: swiftSettings,
         ),
         // common utilities shared across xtool targets
         .target(
@@ -103,7 +112,8 @@ let package = Package(
                     package: "swift-subprocess",
                     condition: .when(platforms: [.linux, .macOS, .android])
                 ),
-            ]
+            ],
+            swiftSettings: swiftSettings,
         ),
         .target(
             name: "XKit",
@@ -111,7 +121,7 @@ let package = Package(
                 "DeveloperAPI",
                 "CXKit",
                 "XUtils",
-                .byName(name: "XADI", condition: .when(platforms: [.linux])),
+                .product(name: "XADI", package: "xadi", condition: .when(platforms: [.linux])),
                 .product(name: "ConcurrencyExtras", package: "swift-concurrency-extras"),
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "SwiftyMobileDevice", package: "SwiftyMobileDevice"),
@@ -142,13 +152,16 @@ let package = Package(
                     condition: .when(platforms: [.linux, .android])
                 ),
             ],
-            cSettings: cSettings
+            cSettings: cSettings,
+            swiftSettings: swiftSettings,
         ),
         .testTarget(
             name: "XToolTests",
             dependencies: [
+                "XKit",
                 "XToolSupport",
-            ]
+            ],
+            swiftSettings: swiftSettings,
         ),
         .target(
             name: "XToolSupport",
@@ -162,7 +175,8 @@ let package = Package(
                 .product(name: "Version", package: "Version"),
                 .product(name: "libunxip", package: "unxip"),
             ],
-            cSettings: cSettings
+            cSettings: cSettings,
+            swiftSettings: swiftSettings,
         ),
         .target(
             name: "PackLib",
@@ -170,7 +184,8 @@ let package = Package(
                 "XUtils",
                 .product(name: "Yams", package: "Yams"),
                 .product(name: "XcodeGenKit", package: "XcodeGen", condition: .when(platforms: [.macOS])),
-            ]
+            ],
+            swiftSettings: swiftSettings,
         ),
         .executableTarget(
             name: "xtool",
@@ -179,7 +194,8 @@ let package = Package(
                 "XKit",
                 "XToolSupport",
             ],
-            cSettings: cSettings
+            cSettings: cSettings,
+            swiftSettings: swiftSettings,
         ),
     ]
 )

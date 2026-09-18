@@ -22,6 +22,12 @@ jobs:
           xcodebuild -version
           uname -m
 
+      - name: Cache del build de xtool
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: xtool-macos26-${{ hashFiles('Package.resolved') }}
+
       - name: Build xtool (host macOS)
         run: swift build -c release --product xtool
 
@@ -41,7 +47,11 @@ jobs:
         run: |
           set -uo pipefail
           brew trust facebook/fb || brew trust --formula facebook/fb/idb facebook/fb/idb-cli facebook/fb/idb-companion || true
-          brew install facebook/fb/idb
+          # el release de idb-companion a veces devuelve 504 desde GitHub: reintentar
+          for i in 1 2 3 4; do
+            if brew install facebook/fb/idb; then break; fi
+            echo "intento $i fallo; reintentando en 15s..."; sleep 15
+          done
           command -v idb >/dev/null || { echo "idb no quedo instalado"; exit 1; }
           idb --help 2>&1 | head -15 || true
           idb list-targets 2>&1 | head -5 || true

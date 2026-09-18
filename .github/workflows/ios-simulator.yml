@@ -1,0 +1,85 @@
+name: ios-simulator
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: "Nombre de la app demo"
+        required: false
+        default: "DemoApp"
+
+jobs:
+  simulate:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.6.app || sudo xcode-select -s /Applications/Xcode.app
+          xcodebuild -version
+          uname -m
+          xcrun simctl list runtimes
+
+      - name: Build xtool (host macOS)
+        run: swift build -c release --product xtool
+
+      - name: Crear app demo
+        run: |
+          mkdir -p work && cd work
+          printf '' | ../.build/release/xtool new --skip-setup "${{ inputs.app_name }}"
+
+      - name: Compilar para el simulador iOS (triple segun arquitectura del runner)
+        run: |
+          set -euo pipefail
+          cd work/"${{ inputs.app_name }}"
+          case "$(uname -m)" in
+            arm64) TRIPLE=arm64-apple-ios-simulator ;;
+            *)     TRIPLE=x86_64-apple-ios-simulator ;;
+          esac
+          echo "triple=$TRIPLE"
+          printf '' | ../../.build/release/xtool dev build --triple "$TRIPLE"
+          echo "--- producto ---"
+          find . -maxdepth 4 -name "*.app" -type d
+
+      - name: Arrancar simulador, instalar, lanzar y capturar
+        id: run
+        run: |
+          set -euo pipefail
+          APP=$(find work -name "*.app" -type d | head -1)
+          [ -n "$APP" ] || { echo "no se encontro el .app"; exit 1; }
+          UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys;d=json.load(sys.stdin)['devices'];c=[x for v in d.values() for x in v if 'iPhone' in x['name']];c.sort(key=lambda x:x['name']);print(c[-1]['udid'])")
+          echo "simulador=$UDID"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" "$APP"
+          BID=$(python3 -c "import plistlib;print(plistlib.load(open('$APP/Info.plist','rb'))['CFBundleIdentifier'])")
+          echo "bundle_id=$BID"
+          xcrun simctl launch "$UDID" "$BID"
+          sleep 12
+          xcrun simctl io "$UDID" screenshot shot-1-inicio.png
+          xcrun simctl io "$UDID" recordVideo --codec h264 demo.mp4 &
+          REC=$!
+          sleep 15
+          kill -INT "$REC" || true
+          sleep 5
+          ls -la shot-1-inicio.png demo.mp4
+          echo "app_path=$APP" >> $GITHUB_OUTPUT
+
+      - name: Empaquetar .app para Appetize (plan gratis)
+        run: |
+          APP="${{ steps.run.outputs.app_path }}"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "appetize-$(basename "$APP").zip"
+          ls -la appetize-*.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-simulador
+          path: |
+            shot-*.png
+            demo.mp4
+            appetize-*.zip
+          if-no-files-found: error

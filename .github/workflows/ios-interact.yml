@@ -1,0 +1,88 @@
+name: ios-interact
+
+on:
+  workflow_dispatch:
+    inputs:
+      acciones:
+        description: "Acciones (una por linea: tap <marcador> / text <cadena> / swipe x1 y1 x2 y2 / sleep N / shot). Vacio = scripts/ci/acciones-demo.txt"
+        required: false
+        default: ""
+
+jobs:
+  interact:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.6.app || sudo xcode-select -s /Applications/Xcode.app
+          xcodebuild -version
+          uname -m
+
+      - name: Build xtool (host macOS)
+        run: swift build -c release --product xtool
+
+      - name: Compilar la app interactiva para el simulador
+        run: |
+          set -euo pipefail
+          cd ci-demo
+          case "$(uname -m)" in
+            arm64) T=arm64-apple-ios-simulator ;;
+            *)     T=x86_64-apple-ios-simulator ;;
+          esac
+          echo "triple=$T"
+          printf '' | ../.build/release/xtool dev build --triple "$T"
+          find . -maxdepth 4 -name "*.app" -type d
+
+      - name: Instalar idb (companion + cliente)
+        run: |
+          set -euo pipefail
+          brew install facebook/fb/idb
+          idb --help | head -20
+          idb list-targets | head -10
+
+      - name: Arrancar simulador, instalar y lanzar la app
+        id: sim
+        run: |
+          set -euo pipefail
+          APP=$(find ci-demo -name "*.app" -type d | head -1)
+          [ -n "$APP" ] || { echo "no se encontro el .app"; exit 1; }
+          UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys;d=json.load(sys.stdin)['devices'];c=[x for v in d.values() for x in v if 'iPhone' in x['name']];c.sort(key=lambda x:x['name']);print(c[-1]['udid'])")
+          echo "udid=$UDID" >> $GITHUB_OUTPUT
+          echo "simulador=$UDID"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" "$APP"
+          BID=$(python3 -c "import plistlib;print(plistlib.load(open('$APP/Info.plist','rb'))['CFBundleIdentifier'])")
+          echo "bundle_id=$BID"
+          xcrun simctl launch "$UDID" "$BID"
+          sleep 5
+          xcrun simctl io "$UDID" screenshot 00-arranque.png
+          ls -la 00-arranque.png
+
+      - name: Ejecutar acciones con capturas
+        env:
+          SIM_UDID: ${{ steps.sim.outputs.udid }}
+        run: |
+          set -uo pipefail
+          ACCIONES="scripts/ci/acciones-demo.txt"
+          if [ -n "${{ inputs.acciones }}" ]; then
+            printf '%s\n' "${{ inputs.acciones }}" > acciones-usuario.txt
+            ACCIONES="acciones-usuario.txt"
+          fi
+          echo "--- acciones ---"; cat "$ACCIONES"
+          bash scripts/ci/idb-actions.sh "$ACCIONES" capturas
+          cp "$ACCIONES" capturas/acciones-usadas.txt
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ios-interaccion
+          path: |
+            00-arranque.png
+            capturas/**
+          if-no-files-found: warn

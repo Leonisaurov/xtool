@@ -1,0 +1,24 @@
+# Secuencia de acciones para CounterApp (app interactiva de ci-demo/).
+# Cada accion deja una captura en capturas/ tras ejecutarse.
+describe
+sleep 4
+shot inicial
+tap Sumar uno
+sleep 1
+tap Sumar uno
+sleep 1
+tap Sumar uno
+sleep 2
+shot tras-tres-taps
+tap Escribe tu nombre
+sleep 1
+text Hermes
+sleep 2
+shot con-texto
+tap Activo
+sleep 2
+shot tras-toggle
+swipe 200 700 200 300
+sleep 1
+shot tras-swipe
+describe

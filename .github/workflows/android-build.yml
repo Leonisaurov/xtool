@@ -1,0 +1,36 @@
+name: android
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - android-support
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Cross-compile xtool for Android (aarch64, release)
+        run: Android/build.sh
+
+      - name: Inspect output
+        run: |
+          ls -la Android/output
+          file Android/output/xtool
+          readelf -d Android/output/xtool | head -30
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xtool-android-aarch64
+          path: Android/output/
+          if-no-files-found: error
+          retention-days: 30

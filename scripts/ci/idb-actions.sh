@@ -67,7 +67,8 @@ for e in datos:
     if any(patron in v.lower() for v in valores):
         fr = caja(e)
         if fr:
-            print(int(fr[0] + fr[2] / 2), int(fr[1] + fr[3] / 2))
+            etiqueta = str(e.get("AXLabel") or e.get("AXUniqueId") or e.get("title") or "")
+            print("%d %d|%s" % (fr[0] + fr[2] / 2, fr[1] + fr[3] / 2, etiqueta))
             sys.exit(0)
 sys.exit(1)
 ' "$patron"
@@ -119,16 +120,31 @@ while IFS= read -r linea || [ -n "$linea" ]; do
             if [[ "$resto" =~ ^[0-9]+[[:space:]]+[0-9]+$ ]]; then
                 idb_do ui tap $resto || rc=$?
             else
-                xy=$(resolver_centro "$resto") || { echo "   elemento no encontrado: $resto"; rc=1; xy=""; }
-                [ -n "$xy" ] && { echo "   centro=$xy"; idb_do ui tap $xy || rc=$?; }
+                info=$(resolver_centro "$resto") || { echo "   elemento no encontrado: $resto"; rc=1; info=""; }
+                if [ -n "$info" ]; then
+                    xy="${info%%|*}"; etiqueta="${info#*|}"
+                    echo "   centro=$xy etiqueta='$etiqueta'"
+                    if [ -n "$etiqueta" ]; then
+                        # el tap por marcador usa la accion de accesibilidad (AXPress):
+                        # imprescindible para Toggle/Switch, donde un toque HID crudo
+                        # sobre la etiqueta no cambia el estado.
+                        idb_do ui tap "$etiqueta" || idb_do ui tap $xy || rc=$?
+                    else
+                        idb_do ui tap $xy || rc=$?
+                    fi
+                fi
             fi
             ;;
         tapxy)    idb_do ui tap $resto || rc=$? ;;
         text)     idb_do ui text "$resto" || rc=$? ;;
         setvalue)
             patron="${resto%% *}"; valor="${resto#* }"
-            xy=$(resolver_centro "$patron") || { echo "   elemento no encontrado: $patron"; rc=1; xy=""; }
-            if [ -n "$xy" ]; then idb_do ui set-value "$patron" --value "$valor" || idb_do ui tap $xy || rc=$?; fi
+            info=$(resolver_centro "$patron") || { echo "   elemento no encontrado: $patron"; rc=1; info=""; }
+            if [ -n "$info" ]; then
+                xy="${info%%|*}"; etiqueta="${info#*|}"
+                idb_do ui set-value "$patron" --value "$valor" || idb_do ui tap $xy || rc=$?
+                [ -n "$etiqueta" ] && idb_do ui tap "$etiqueta" >/dev/null 2>&1 || true
+            fi
             ;;
         swipe)    idb_do ui swipe $resto || rc=$? ;;
         button)   idb_do ui button "$resto" || rc=$? ;;

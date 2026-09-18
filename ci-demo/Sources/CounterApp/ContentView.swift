@@ -21,6 +21,11 @@ struct ContentView: View {
             TextField("Escribe tu nombre", text: $nombre)
                 .textFieldStyle(.roundedBorder)
                 .padding(.horizontal, 30)
+                // Etiqueta e identificador explicitos: el prompt de un TextField va a
+                // AXValue, no a AXLabel, y sin AXLabel idb no puede enfocarlo ni fijarle
+                // valor por accesibilidad (el tipeo HID no llega si no hay foco).
+                .accessibilityLabel("campo-nombre")
+                .accessibilityIdentifier("campo-nombre")
 
             Text("Hola, \(nombre.isEmpty ? "desconocido" : nombre)")
                 .font(.title3)

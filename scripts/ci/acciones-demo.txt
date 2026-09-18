@@ -11,13 +11,16 @@ sleep 1
 tap Sumar uno
 sleep 2
 shot tras-tres-taps
-tap Escribe tu nombre
-sleep 1
+tap campo-nombre
+sleep 2
 text Hermes
 sleep 2
-shot con-texto
+shot tras-tipeo
+setvalue campo-nombre Hermes
+sleep 2
+shot tras-setvalue
 tap Activo
-sleep 1
+sleep 2
 shot tras-toggle
 swipe 60 559 330 559
 sleep 1

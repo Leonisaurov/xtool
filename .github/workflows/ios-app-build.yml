@@ -1,0 +1,58 @@
+name: ios-app-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: "Nombre de la app demo a generar y compilar"
+        required: false
+        default: "DemoApp"
+
+jobs:
+  build-ios-app:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.6.app
+          xcodebuild -version
+          swift --version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Build xtool (host macOS)
+        run: swift build -c release --product xtool
+
+      - name: Generate demo app
+        run: |
+          mkdir -p work && cd work
+          printf '' | ../.build/release/xtool new --skip-setup "${{ inputs.app_name }}" | tail -5
+
+      - name: Build app (unsigned) y empaquetar .ipa
+        run: |
+          cd work/"${{ inputs.app_name }}"
+          printf '' | ../../.build/release/xtool dev build --ipa 2>&1 | tail -20
+          find . -maxdepth 4 -name "*.ipa" -o -maxdepth 4 -name "*.app" | head
+
+      - name: Localizar productos
+        id: products
+        run: |
+          cd work/"${{ inputs.app_name }}"
+          IPA=$(find . -name "*.ipa" | head -1)
+          APP=$(find . -name "*.app" -type d | head -1)
+          echo "ipa=$IPA" >> $GITHUB_OUTPUT
+          echo "app=$APP" >> $GITHUB_OUTPUT
+          ls -la "$IPA" 2>/dev/null; ls -la "$APP" 2>/dev/null
+          file "$APP/$(basename "$APP" .app)" 2>/dev/null | head -3
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-app-unsigned
+          path: |
+            work/**/*.ipa
+            work/**/*.app
+          if-no-files-found: error

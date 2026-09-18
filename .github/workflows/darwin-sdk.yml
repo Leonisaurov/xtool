@@ -1,0 +1,67 @@
+name: darwin-sdk
+
+on:
+  workflow_dispatch:
+    inputs:
+      xcode_version:
+        description: "Xcode a usar (debe coincidir con el swift local)"
+        required: false
+        default: "Xcode_26.6"
+      split_size:
+        description: "Tamaño de cada parte (split) para subir como release asset"
+        required: false
+        default: "400m"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-darwin-sdk:
+    runs-on: macos-26
+    timeout-minutes: 150
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Select Xcode
+        run: |
+          XC="/Applications/${{ inputs.xcode_version }}.app"
+          test -d "$XC" || { echo "no existe $XC"; ls -d /Applications/Xcode*.app; exit 1; }
+          sudo xcode-select -s "$XC"
+          xcodebuild -version
+          swift --version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Build xtool (host macOS)
+        run: swift build -c release --product xtool
+
+      - name: Build Darwin Swift SDK bundle para host aarch64
+        run: |
+          mkdir -p sdk-out
+          ./.build/release/xtool sdk build "/Applications/${{ inputs.xcode_version }}.app" ./sdk-out --arch arm64
+          du -sh sdk-out/darwin.xtoolsdk
+          ls -la sdk-out/darwin.xtoolsdk | head -20
+
+      - name: Empaquetar y partir
+        run: |
+          tar czf darwin-xtoolsdk-aarch64.tar.gz -C sdk-out darwin.xtoolsdk
+          ls -lh darwin-xtoolsdk-aarch64.tar.gz
+          shasum -a 256 darwin-xtoolsdk-aarch64.tar.gz | tee SHA256SUMS.txt
+          mkdir -p parts
+          split -b "${{ inputs.split_size }}" darwin-xtoolsdk-aarch64.tar.gz parts/darwin-xtoolsdk-aarch64.tar.gz.part-
+          ls -lh parts
+
+      - name: Publicar como release asset (permanente, sin cuota de artifacts)
+        run: |
+          gh release view darwin-sdk >/dev/null 2>&1 || \
+            gh release create darwin-sdk \
+              --title "Darwin Swift SDK bundle (host aarch64)" \
+              --notes "Bundle iOS generado por xtool sdk build desde ${{ inputs.xcode_version }} en runner macOS. Instalar en el host con: xtool sdk install darwin.xtoolsdk"
+          gh release upload darwin-sdk parts/* SHA256SUMS.txt --clobber
+          gh release view darwin-sdk --json assets --jq '.assets[] | "\(.name)  \(.size)"'

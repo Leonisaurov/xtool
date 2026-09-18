@@ -40,13 +40,18 @@ jobs:
       - name: Localizar productos
         id: products
         run: |
+          set +e
           cd work/"${{ inputs.app_name }}"
+          echo "--- arbol de salida ---"; find . -maxdepth 3 -name "*.ipa" -o -maxdepth 3 -name "*.app" | head -10
           IPA=$(find . -name "*.ipa" | head -1)
           APP=$(find . -name "*.app" -type d | head -1)
-          echo "ipa=$IPA" >> $GITHUB_OUTPUT
-          echo "app=$APP" >> $GITHUB_OUTPUT
-          ls -la "$IPA" 2>/dev/null; ls -la "$APP" 2>/dev/null
-          file "$APP/$(basename "$APP" .app)" 2>/dev/null | head -3
+          [ -n "$IPA" ] && echo "ipa=$IPA" >> $GITHUB_OUTPUT
+          [ -n "$APP" ] && echo "app=$APP" >> $GITHUB_OUTPUT
+          echo "IPA=$IPA APP=$APP"
+          [ -n "$IPA" ] && ls -la "$IPA"
+          [ -n "$APP" ] && ls -la "$APP" | head
+          [ -n "$APP" ] && file "$APP/$(basename "$APP" .app)"
+          exit 0
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -54,5 +59,5 @@ jobs:
           name: ios-app-unsigned
           path: |
             work/**/*.ipa
-            work/**/*.app
+            work/**/*.app/**
           if-no-files-found: error

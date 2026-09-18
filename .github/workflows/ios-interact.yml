@@ -39,10 +39,12 @@ jobs:
 
       - name: Instalar idb (companion + cliente)
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          brew trust facebook/fb || brew trust --formula facebook/fb/idb facebook/fb/idb-cli facebook/fb/idb-companion || true
           brew install facebook/fb/idb
-          idb --help | head -20
-          idb list-targets | head -10
+          command -v idb >/dev/null || { echo "idb no quedo instalado"; exit 1; }
+          idb --help 2>&1 | head -15 || true
+          idb list-targets 2>&1 | head -5 || true
 
       - name: Arrancar simulador, instalar y lanzar la app
         id: sim

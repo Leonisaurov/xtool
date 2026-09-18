@@ -1,5 +1,6 @@
 # Secuencia de acciones para CounterApp (app interactiva de ci-demo/).
 # Cada accion deja una captura en capturas/ tras ejecutarse.
+# El volcado final del arbol de accesibilidad permite verificar el estado logrado.
 describe
 sleep 4
 shot inicial
@@ -16,9 +17,8 @@ text Hermes
 sleep 2
 shot con-texto
 tap Activo
-sleep 2
-shot tras-toggle
-swipe 200 700 200 300
 sleep 1
-shot tras-swipe
-describe
+shot tras-toggle
+swipe 60 559 330 559
+sleep 1
+shot tras-slider

@@ -3,10 +3,22 @@ name: ios-interact
 on:
   workflow_dispatch:
     inputs:
+      app_dir:
+        description: "Carpeta del proyecto xtool (ci-clicker, ci-demo)"
+        required: false
+        default: "ci-clicker"
+      acciones_file:
+        description: "Archivo de acciones por defecto"
+        required: false
+        default: "scripts/ci/acciones-clicker.txt"
       acciones:
-        description: "Acciones (una por linea: tap <marcador> / text <cadena> / swipe x1 y1 x2 y2 / sleep N / shot). Vacio = scripts/ci/acciones-demo.txt"
+        description: "Acciones propias (una por linea). Si se rellena, tiene prioridad"
         required: false
         default: ""
+      video:
+        description: "Grabar video del simulador (true/false)"
+        required: false
+        default: "true"
 
 jobs:
   interact:
@@ -31,15 +43,15 @@ jobs:
       - name: Build xtool (host macOS)
         run: swift build -c release --product xtool
 
-      - name: Compilar la app interactiva para el simulador
+      - name: Compilar la app para el simulador
         run: |
           set -euo pipefail
-          cd ci-demo
+          cd "${{ inputs.app_dir }}"
           case "$(uname -m)" in
             arm64) T=arm64-apple-ios-simulator ;;
             *)     T=x86_64-apple-ios-simulator ;;
           esac
-          echo "triple=$T"
+          echo "app=$(basename "$PWD") triple=$T"
           printf '' | ../.build/release/xtool dev build --triple "$T"
           find . -maxdepth 4 -name "*.app" -type d
 
@@ -53,14 +65,13 @@ jobs:
             echo "intento $i fallo; reintentando en 15s..."; sleep 15
           done
           command -v idb >/dev/null || { echo "idb no quedo instalado"; exit 1; }
-          idb --help 2>&1 | head -15 || true
-          idb list-targets 2>&1 | head -5 || true
+          idb --help 2>&1 | head -5 || true
 
       - name: Arrancar simulador, instalar y lanzar la app
         id: sim
         run: |
           set -euo pipefail
-          APP=$(find ci-demo -name "*.app" -type d | head -1)
+          APP=$(find "${{ inputs.app_dir }}" -name "*.app" -type d | head -1)
           [ -n "$APP" ] || { echo "no se encontro el .app"; exit 1; }
           UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys;d=json.load(sys.stdin)['devices'];c=[x for v in d.values() for x in v if 'iPhone' in x['name']];c.sort(key=lambda x:x['name']);print(c[-1]['udid'])")
           echo "udid=$UDID" >> $GITHUB_OUTPUT
@@ -75,19 +86,40 @@ jobs:
           xcrun simctl io "$UDID" screenshot 00-arranque.png
           ls -la 00-arranque.png
 
+      - name: Iniciar grabacion de video
+        if: ${{ inputs.video != 'false' }}
+        env:
+          SIM_UDID: ${{ steps.sim.outputs.udid }}
+        run: |
+          setsid nohup xcrun simctl io "$SIM_UDID" recordVideo --codec=h264 --force video.mp4 \
+            >/tmp/record.log 2>&1 </dev/null &
+          echo $! > /tmp/rec.pid
+          sleep 3
+          echo "grabando con pid $(cat /tmp/rec.pid)"
+
       - name: Ejecutar acciones con capturas
         env:
           SIM_UDID: ${{ steps.sim.outputs.udid }}
         run: |
           set -uo pipefail
-          ACCIONES="scripts/ci/acciones-demo.txt"
+          ACCIONES="${{ inputs.acciones_file }}"
           if [ -n "${{ inputs.acciones }}" ]; then
             printf '%s\n' "${{ inputs.acciones }}" > acciones-usuario.txt
             ACCIONES="acciones-usuario.txt"
           fi
-          echo "--- acciones ---"; cat "$ACCIONES"
+          echo "--- acciones ($ACCIONES) ---"; cat "$ACCIONES"
           bash scripts/ci/idb-actions.sh "$ACCIONES" capturas
           cp "$ACCIONES" capturas/acciones-usadas.txt
+
+      - name: Detener grabacion de video
+        if: always()
+        run: |
+          if [ -f /tmp/rec.pid ]; then
+            kill -INT "$(cat /tmp/rec.pid)" 2>/dev/null || true
+            sleep 4
+          fi
+          ls -la video.mp4 2>/dev/null || echo "sin video"
+          cat /tmp/record.log 2>/dev/null | tail -5 || true
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
@@ -96,5 +128,6 @@ jobs:
           name: ios-interaccion
           path: |
             00-arranque.png
+            video.mp4
             capturas/**
           if-no-files-found: warn

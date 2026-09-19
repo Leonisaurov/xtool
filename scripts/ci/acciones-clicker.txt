@@ -1,0 +1,19 @@
+# Clicker: unos taps manuales y luego 12 s de auto-juego, con captura por paso.
+describe
+sleep 4
+shot inicio
+tap TAP
+sleep 1
+tap TAP
+sleep 1
+tap TAP
+sleep 2
+shot tras-tres-taps
+tap auto-toggle
+sleep 3
+shot auto-3s
+sleep 9
+shot auto-12s
+tap auto-toggle
+sleep 2
+shot auto-apagado

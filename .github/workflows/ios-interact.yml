@@ -86,40 +86,41 @@ jobs:
           xcrun simctl io "$UDID" screenshot 00-arranque.png
           ls -la 00-arranque.png
 
-      - name: Iniciar grabacion de video
-        if: ${{ inputs.video != 'false' }}
-        env:
-          SIM_UDID: ${{ steps.sim.outputs.udid }}
-        run: |
-          setsid nohup xcrun simctl io "$SIM_UDID" recordVideo --codec=h264 --force video.mp4 \
-            >/tmp/record.log 2>&1 </dev/null &
-          echo $! > /tmp/rec.pid
-          sleep 3
-          echo "grabando con pid $(cat /tmp/rec.pid)"
-
-      - name: Ejecutar acciones con capturas
+      # Grabacion y acciones en el MISMO paso: macOS no tiene setsid y un proceso
+      # en segundo plano lanzado en otro paso puede no sobrevivir entre pasos.
+      - name: Ejecutar acciones con capturas (y grabar video)
         env:
           SIM_UDID: ${{ steps.sim.outputs.udid }}
         run: |
           set -uo pipefail
+          RC=0
           ACCIONES="${{ inputs.acciones_file }}"
           if [ -n "${{ inputs.acciones }}" ]; then
             printf '%s\n' "${{ inputs.acciones }}" > acciones-usuario.txt
             ACCIONES="acciones-usuario.txt"
           fi
           echo "--- acciones ($ACCIONES) ---"; cat "$ACCIONES"
-          bash scripts/ci/idb-actions.sh "$ACCIONES" capturas
-          cp "$ACCIONES" capturas/acciones-usadas.txt
 
-      - name: Detener grabacion de video
-        if: always()
-        run: |
-          if [ -f /tmp/rec.pid ]; then
-            kill -INT "$(cat /tmp/rec.pid)" 2>/dev/null || true
-            sleep 4
+          REC=""
+          if [ "${{ inputs.video }}" != "false" ]; then
+            nohup xcrun simctl io "$SIM_UDID" recordVideo --codec=h264 video.mp4 \
+              >/tmp/record.log 2>&1 </dev/null &
+            REC=$!
+            sleep 3
+            echo "grabando con pid $REC"
           fi
-          ls -la video.mp4 2>/dev/null || echo "sin video"
-          cat /tmp/record.log 2>/dev/null | tail -5 || true
+
+          bash scripts/ci/idb-actions.sh "$ACCIONES" capturas || RC=$?
+          cp "$ACCIONES" capturas/acciones-usadas.txt 2>/dev/null || true
+
+          if [ -n "$REC" ]; then
+            kill -INT "$REC" 2>/dev/null || true
+            for _ in $(seq 1 20); do kill -0 "$REC" 2>/dev/null || break; sleep 1; done
+            kill -9 "$REC" 2>/dev/null || true
+            ls -la video.mp4 2>/dev/null || echo "sin video"
+            tail -3 /tmp/record.log 2>/dev/null || true
+          fi
+          exit "$RC"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
